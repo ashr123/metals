@@ -9,6 +9,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.Await
@@ -324,10 +325,8 @@ class WorksheetProvider(
       token.checkCanceled()
       val promise = Promise[EvaluatedWorksheetSnapshot]()
       exportableEvaluations.update(path, promise)
-      // NOTE(olafurpg) Run evaluation in a custom thread so that we can
-      // `Thread.stop()` it in case of infinite loop. I'm not aware of any
-      // other JVM APIs that allow killing a runnable even in the face of
-      // infinite loops.
+      // NOTE(olafurpg) Run evaluation in a custom thread so cancellation can
+      // interrupt the evaluation thread.
       val thread = new Thread(s"Evaluating Worksheet ${path.filename}") {
         override def run(): Unit = {
           result.complete(
@@ -368,22 +367,25 @@ class WorksheetProvider(
       thread: Thread,
       result: CompletableFuture[Option[EvaluatedWorksheetSnapshot]],
   ): Cancelable = {
-    // Last resort, if everything else fails we use `Thread.stop()`.
-    val stopThread = new Runnable {
+    val cancelRequested = new AtomicBoolean(false)
+    // Last resort, if the thread remains alive, issue one more interrupt.
+    val forceInterruptThread = new Runnable {
       def run(): Unit = {
         if (thread.isAlive()) {
-          scribe.warn(s"thread stop: ${thread.getName()}")
-          thread.stop()
+          scribe.warn(
+            s"thread still alive after interrupt: ${thread.getName()}"
+          )
+          thread.interrupt()
         }
       }
     }
     new Cancelable {
       def cancel() =
-        if (thread.isAlive()) {
-          // Canceling a running program. first line of
+        if (thread.isAlive() && cancelRequested.compareAndSet(false, true)) {
+          // Canceling a running program. First line of
           // defense is `Thread.interrupt()`. Fingers crossed it's enough.
           result.complete(None)
-          threadStopper.schedule(stopThread, 3, TimeUnit.SECONDS)
+          threadStopper.schedule(forceInterruptThread, 3, TimeUnit.SECONDS)
           scribe.warn(s"thread interrupt: ${thread.getName()}")
           thread.interrupt()
         }
@@ -394,8 +396,8 @@ class WorksheetProvider(
    * Prompts the user to cancel the task after a few seconds.
    *
    * Attempts to gracefully shut down the thread when users requests to cancel:
-   * First tries `Thread.interrupt()` with fallback to `Thread.stop()` after
-   * one second if interruption doesn't work.
+   * first tries `Thread.interrupt()` and follows up with another interrupt
+   * after a short delay if interruption doesn't work.
    */
   private def interruptThreadOnCancel(
       path: AbsolutePath,

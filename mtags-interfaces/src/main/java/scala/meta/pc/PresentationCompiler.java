@@ -291,8 +291,8 @@ public abstract class PresentationCompiler {
 	public abstract PresentationCompiler withExecutorService(ExecutorService executorService);
 
 	/**
-	 * Provide a custom scheduled executor service to schedule `Thread.stop()` for
-	 * unresponsive compiler instances.
+	 * Provide a custom scheduled executor service to schedule thread interruption
+	 * for unresponsive compiler instances.
 	 */
 	public abstract PresentationCompiler withScheduledExecutorService(
 			ScheduledExecutorService scheduledExecutorService);
