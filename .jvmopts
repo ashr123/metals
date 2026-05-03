@@ -3,3 +3,8 @@
 -XX:ReservedCodeCacheSize=1024m
 -XX:+TieredCompilation
 -Dfile.encoding=UTF-8
+-Xss4m
+-Xmx2G
+-XX:ReservedCodeCacheSize=1024m
+-XX:+TieredCompilation
+-Dfile.encoding=UTF-8
