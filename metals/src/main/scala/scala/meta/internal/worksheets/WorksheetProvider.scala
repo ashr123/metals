@@ -382,7 +382,7 @@ class WorksheetProvider(
     new Cancelable {
       def cancel() =
         if (thread.isAlive() && cancelRequested.compareAndSet(false, true)) {
-          // Canceling a running program. first line of
+          // Canceling a running program. First line of
           // defense is `Thread.interrupt()`. Fingers crossed it's enough.
           result.complete(None)
           threadStopper.schedule(forceInterruptThread, 3, TimeUnit.SECONDS)
